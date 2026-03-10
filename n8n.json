@@ -733,6 +733,19 @@
     },
     {
       "parameters": {
+        "jsCode": "const items = $input.all();\n\nreturn items.map((it, i) => {\n  const d = it.json?.body?.data || it.json?.data || {};\n\n  let url = null;\n  try {\n    const rj = d?.resultJson;\n    const obj = (typeof rj === 'string') ? JSON.parse(rj) : rj;\n    url = obj?.resultUrls?.[0] || null;\n  } catch (e) {}\n\n  url = String(url || '').split('\\n')[0].split('\\r')[0].trim();\n\n  const state = String(d?.state || '').toLowerCase();\n  const failed = state === 'failed' || !!d?.failCode;\n  const done = state === 'success' && /^https?:\\/\\//i.test(url);\n  const poll_count = (it.json?.poll_count || 0) + 1;\n\n  return {\n    json: {\n      ...it.json,\n      taskId: d?.taskId ?? it.json?.taskId ?? null,\n      state: d?.state ?? null,\n      done,\n      failed,\n      poll_count,\n      video_url: url\n    },\n    pairedItem: { item: i }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2496,
+        2416
+      ],
+      "id": "a917d8ec-9a90-40fb-93c9-adb9fbbef8c2",
+      "name": "Video Code"
+    },
+    {
+      "parameters": {
         "amount": 10
       },
       "type": "n8n-nodes-base.wait",
@@ -744,6 +757,36 @@
       "id": "d8330041-4508-41bf-9b61-ed2069b93255",
       "name": "Wait_10_seconds",
       "webhookId": "f6587b8d-36b8-4a45-b85e-8d9a9b146c5a"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.kie.ai/api/v1/jobs/createTask",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({\n  model: \"grok-imagine/image-to-video\",\n  input: {\n    image_urls: [$json.image_url],\n    prompt: $json.video_prompt_final,\n    duration: \"6\",\n    mode: \"normal\",\n    resolution: \"720p\"\n  }\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1952,
+        2416
+      ],
+      "id": "45d20638-d042-4bc8-a94c-64b2d3ec1c0b",
+      "name": "Grok",
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "5w28pQvciBXtRxxT",
+          "name": "Bearer Auth account"
+        }
+      }
     },
     {
       "parameters": {
@@ -783,6 +826,38 @@
         "googlePalmApi": {
           "id": "ebd7WTiNzGaCelt6",
           "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.kie.ai/api/v1/jobs/recordInfo?taskId={{ $json.data?.taskId || $json.taskId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2320,
+        2416
+      ],
+      "id": "ee889e7e-d7b4-4fb2-be61-0a3cc75f2e0b",
+      "name": "Grok Check",
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "5w28pQvciBXtRxxT",
+          "name": "Bearer Auth account"
         }
       }
     },
@@ -1419,6 +1494,23 @@
     },
     {
       "parameters": {
+        "amount": 75
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2144,
+        2416
+      ],
+      "id": "f4a5ee86-6766-4cbe-8b43-b8740b97d04d",
+      "name": "Wait_100_seconds2",
+      "webhookId": "f6587b8d-36b8-4a45-b85e-8d9a9b146c5a",
+      "retryOnFail": false,
+      "waitBetweenTries": 5000,
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
         "modelId": {
           "__rl": true,
           "value": "models/gemini-2.5-pro",
@@ -1485,16 +1577,49 @@
     },
     {
       "parameters": {
-        "jsCode": "const item = $input.first();\nconst { image_url, video_prompt_final, gcs_object_name, duration, shot_index } = item.json;\n\n// API key from n8n env var: set KIE_API_KEY in your n8n environment\nconst apiKey = $env[\"KIE_API_KEY\"];\nif (!apiKey) throw new Error(\"KIE_API_KEY env var not set in n8n\");\n\nconst API_BASE = \"https://api.kie.ai/api/v1\";\nconst sleep = ms => new Promise(r => setTimeout(r, ms));\n\nconst submitJob = async () => {\n  const res = await fetch(`${API_BASE}/jobs/createTask`, {\n    method: \"POST\",\n    headers: {\n      \"Content-Type\": \"application/json\",\n      \"Authorization\": `Bearer ${apiKey}`\n    },\n    body: JSON.stringify({\n      model: \"grok-imagine/image-to-video\",\n      input: {\n        image_urls: [image_url],\n        prompt: video_prompt_final,\n        duration: \"6\",\n        mode: \"normal\",\n        resolution: \"720p\"\n      }\n    })\n  });\n  if (!res.ok) throw new Error(`Submit HTTP ${res.status}: ${await res.text()}`);\n  return res.json();\n};\n\nconst pollStatus = async (taskId) => {\n  const res = await fetch(`${API_BASE}/jobs/recordInfo?taskId=${taskId}`, {\n    headers: { \"Authorization\": `Bearer ${apiKey}` }\n  });\n  if (!res.ok) throw new Error(`Poll HTTP ${res.status}`);\n  return res.json();\n};\n\nconst MAX_SUBMISSIONS = 3;\nconst MAX_POLLS = 20;\nconst POLL_INTERVAL = 30000;\nconst INITIAL_WAIT = 30000;\n\nfor (let subAttempt = 0; subAttempt < MAX_SUBMISSIONS; subAttempt++) {\n  let taskId;\n  for (let t = 0; t < 5; t++) {\n    try {\n      const resp = await submitJob();\n      taskId = resp?.data?.taskId;\n      if (!taskId) throw new Error(\"No taskId in response: \" + JSON.stringify(resp));\n      break;\n    } catch (e) {\n      if (t === 4) throw new Error(`Grok submit failed after 5 tries: ${e.message}`);\n      await sleep(10000 * (t + 1));\n    }\n  }\n\n  await sleep(INITIAL_WAIT);\n\n  let needResubmit = false;\n  for (let poll = 0; poll < MAX_POLLS; poll++) {\n    let pollResp;\n    try {\n      pollResp = await pollStatus(taskId);\n    } catch (e) {\n      await sleep(POLL_INTERVAL);\n      continue;\n    }\n\n    const data = pollResp?.data || {};\n    const state = String(data?.state || \"\").toLowerCase();\n\n    if (state === \"failed\" || data?.failCode) {\n      needResubmit = true;\n      break;\n    }\n\n    if (state === \"success\") {\n      let url = null;\n      try {\n        const rj = data?.resultJson;\n        const obj = typeof rj === \"string\" ? JSON.parse(rj) : rj;\n        url = (obj?.resultUrls?.[0] || \"\").trim().split(/[\r\n]/)[0];\n      } catch (_) {}\n\n      if (url && /^https?:\\/\\//i.test(url)) {\n        return [{ json: { ...item.json, taskId, state: data.state, video_url: url } }];\n      }\n    }\n\n    await sleep(POLL_INTERVAL);\n  }\n\n  if (!needResubmit) break;\n}\n\nthrow new Error(`Grok video timed out / failed for image: ${image_url}`);\n"
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "done-check",
+              "leftValue": "={{ $json.done }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
       },
-      "type": "n8n-nodes-base.code",
+      "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        1952,
+        2672,
         2416
       ],
-      "id": "b1c2d3e4-f5a6-7890-abcd-ef1234567890",
-      "name": "Smart Grok All"
+      "id": "c1d2e3f4-a5b6-7890-cdef-012345678901",
+      "name": "Check Done"
+    },
+    {
+      "parameters": {
+        "amount": 30
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2848,
+        2516
+      ],
+      "id": "d2e3f4a5-b6c7-8901-defa-123456789012",
+      "name": "Wait_30_poll",
+      "webhookId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
     }
   ],
   "pinData": {
@@ -1554,7 +1679,7 @@
               "ok": true,
               "meta": {
                 "title": "별론데 묘하게 정드는 사람",
-                "description": "#인간관계 #심리애니\n\n📌 비치키 신간!!  「관계가 술술 풀리는 감정 치트키」\n― 교보문고: https://bit.ly/4hHqenv\n― YES24: https://bit.ly/4ov1OAk\n― 알라딘: https://bit.ly/3WCpw1e\n\n📌 비치키 전자책\n구입 링크 : https://secretbook.imweb.me\n\n📌 종이책 1탄  「그토록 힘들던 인간관계가 술술 풀리기 시작했다.」 \n구입 링크 : https://link.coupang.com/a/bUIxfJ\n\n📌 비치키 멤버십\n가입 링크 : https://www.youtube.com/channel/UCK2n3rqhkDM4zRhx2dC7weA/join\n\n\n✓ 비치키 제작팀\n - 대본 : 이승렬 \n - 제작 : 장홍범\n - 작화 : 이현지\n\n\n✓ 배경음악\n - 셀바이 뮤직",
+                "description": "#인간관계 #심리애니\n\n​📌 비치키 신간!!  「관계가 술술 풀리는 감정 치트키」\n― 교보문고: https://bit.ly/4hHqenv\n― YES24: https://bit.ly/4ov1OAk\n― 알라딘: https://bit.ly/3WCpw1e\n\n📌 비치키 전자책\n구입 링크 : https://secretbook.imweb.me\n\n📌 종이책 1탄  「그토록 힘들던 인간관계가 술술 풀리기 시작했다.」 \n구입 링크 : https://link.coupang.com/a/bUIxfJ\n\n📌 비치키 멤버십\n가입 링크 : https://www.youtube.com/channel/UCK2n3rqhkDM4zRhx2dC7weA/join\n\n\n✓ 비치키 제작팀\n - 대본 : 이승렬 \n - 제작 : 장홍범\n - 작화 : 이현지\n\n\n✓ 배경음악\n - 셀바이 뮤직",
                 "channel": "비치키",
                 "published_at": "2025-11-20T14:01:31Z",
                 "duration_seconds": 212,
@@ -5155,6 +5280,17 @@
         ]
       ]
     },
+    "Video Code": {
+      "main": [
+        [
+          {
+            "node": "Check Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Wait_10_seconds": {
       "main": [
         [
@@ -5166,11 +5302,33 @@
         ]
       ]
     },
+    "Grok": {
+      "main": [
+        [
+          {
+            "node": "Wait_100_seconds2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "SRT": {
       "main": [
         [
           {
             "node": "Scene Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Grok Check": {
+      "main": [
+        [
+          {
+            "node": "Video Code",
             "type": "main",
             "index": 0
           }
@@ -5199,7 +5357,7 @@
         ],
         [
           {
-            "node": "Smart Grok All",
+            "node": "Grok",
             "type": "main",
             "index": 0
           },
@@ -5387,6 +5545,17 @@
         ]
       ]
     },
+    "Wait_100_seconds2": {
+      "main": [
+        [
+          {
+            "node": "Grok Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Scene Merge": {
       "main": [
         [
@@ -5420,11 +5589,29 @@
         ]
       ]
     },
-    "Smart Grok All": {
+    "Check Done": {
       "main": [
         [
           {
             "node": "Grok URL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait_30_poll",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait_30_poll": {
+      "main": [
+        [
+          {
+            "node": "Grok Check",
             "type": "main",
             "index": 0
           }
