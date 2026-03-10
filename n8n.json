@@ -874,7 +874,6 @@
           },
           "response": {
             "response": {
-              "fullResponse": true,
               "responseFormat": "file"
             }
           }
@@ -900,7 +899,7 @@
     },
     {
       "parameters": {
-        "batchSize": 20,
+        "batchSize": 4,
         "options": {}
       },
       "type": "n8n-nodes-base.splitInBatches",
@@ -911,31 +910,6 @@
       ],
       "id": "c0532f91-0f64-48fe-901d-86eca7c36f56",
       "name": "Loop Over Items"
-    },
-    {
-      "parameters": {
-        "mode": "combine",
-        "combineBy": "combineByKey",
-        "mergeByFields": {
-          "values": [
-            {
-              "field1": "shot_index",
-              "field2": "shot_index"
-            }
-          ]
-        },
-        "options": {
-          "includeUnpaired": false
-        }
-      },
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3.2,
-      "position": [
-        2864,
-        2400
-      ],
-      "id": "0047d631-25ab-4cf8-a279-8e476c3fade3",
-      "name": "Merge1"
     },
     {
       "parameters": {
@@ -5403,9 +5377,9 @@
       "main": [
         [
           {
-            "node": "Merge1",
+            "node": "Save Video",
             "type": "main",
-            "index": 1
+            "index": 0
           }
         ]
       ]
@@ -5422,22 +5396,6 @@
         [
           {
             "node": "Grok",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Merge1",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Merge1": {
-      "main": [
-        [
-          {
-            "node": "Save Video",
             "type": "main",
             "index": 0
           }
