@@ -874,6 +874,7 @@
           },
           "response": {
             "response": {
+              "fullResponse": true,
               "responseFormat": "file"
             }
           }
@@ -1657,6 +1658,29 @@
       ],
       "parameters": {
         "jsCode": "return $input.all().map((it, i) => ({\n  json: {\n    ...it.json,\n    retry_count: (it.json.retry_count || 0) + 1,\n    taskId: null,\n    done: false,\n    failed: false,\n    poll_count: 0\n  },\n  pairedItem: { item: i }\n}));"
+      }
+    },
+    {
+      "id": "merge1-restored",
+      "name": "Merge1",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        2400,
+        300
+      ],
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByKey",
+        "mergeByFields": {
+          "values": [
+            {
+              "field1": "shot_index",
+              "field2": "shot_index"
+            }
+          ]
+        },
+        "options": {}
       }
     }
   ],
@@ -5377,9 +5401,9 @@
       "main": [
         [
           {
-            "node": "Save Video",
+            "node": "Merge1",
             "type": "main",
-            "index": 0
+            "index": 1
           }
         ]
       ]
@@ -5618,6 +5642,11 @@
             "node": "Grok URL",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 0
           }
         ],
         [
@@ -5663,6 +5692,17 @@
         [
           {
             "node": "Grok",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge1": {
+      "main": [
+        [
+          {
+            "node": "Save Video",
             "type": "main",
             "index": 0
           }
