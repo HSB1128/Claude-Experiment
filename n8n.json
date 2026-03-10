@@ -900,7 +900,7 @@
     },
     {
       "parameters": {
-        "batchSize": 2,
+        "batchSize": 20,
         "options": {}
       },
       "type": "n8n-nodes-base.splitInBatches",
@@ -915,8 +915,18 @@
     {
       "parameters": {
         "mode": "combine",
-        "combineBy": "combineByPosition",
-        "options": {}
+        "combineBy": "combineByKey",
+        "mergeByFields": {
+          "values": [
+            {
+              "field1": "shot_index",
+              "field2": "shot_index"
+            }
+          ]
+        },
+        "options": {
+          "includeUnpaired": false
+        }
       },
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.2,
