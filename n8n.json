@@ -733,7 +733,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\n\nreturn items.map((it, i) => {\n  const d = it.json?.body?.data || it.json?.data || {};\n\n  let url = null;\n  try {\n    const rj = d?.resultJson;\n    const obj = (typeof rj === 'string') ? JSON.parse(rj) : rj;\n    url = obj?.resultUrls?.[0] || null;\n  } catch (e) {}\n\n  url = String(url || '').split('\\n')[0].split('\\r')[0].trim();\n\n  const state = String(d?.state || '').toLowerCase();\n  const failed = state === 'failed' || !!d?.failCode;\n  const done = state === 'success' && /^https?:\\/\\//i.test(url);\n  const poll_count = (it.json?.poll_count || 0) + 1;\n\n  return {\n    json: {\n      ...it.json,\n      taskId: d?.taskId ?? it.json?.taskId ?? null,\n      state: d?.state ?? null,\n      done,\n      failed,\n      poll_count,\n      video_url: url\n    },\n    pairedItem: { item: i }\n  };\n});"
+        "jsCode": "const items = $input.all();\n\nreturn items.map((it, i) => {\n  const d = it.json?.body?.data || it.json?.data || {};\n\n  let url = null;\n  try {\n    const rj = d?.resultJson;\n    const obj = (typeof rj === 'string') ? JSON.parse(rj) : rj;\n    url = obj?.resultUrls?.[0] || null;\n  } catch (e) {}\n\n  url = String(url || '').split('\\n')[0].split('\\r')[0].trim();\n\n  const state = String(d?.state || '').toLowerCase();\n  const failed = state === 'failed' || state === 'fail' || !!d?.failCode;\n  const done = state === 'success' && /^https?:\\/\\//i.test(url);\n  const poll_count = (it.json?.poll_count || 0) + 1;\n  const retry_count = it.json?.retry_count || 0;\n\n  return {\n    json: {\n      ...it.json,\n      taskId: d?.taskId ?? it.json?.taskId ?? null,\n      state: d?.state ?? null,\n      done,\n      failed,\n      poll_count,\n      retry_count,\n      video_url: url\n    },\n    pairedItem: { item: i }\n  };\n});"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1630,6 +1630,60 @@
       "id": "d2e3f4a5-b6c7-8901-defa-123456789012",
       "name": "Wait_30_poll",
       "webhookId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    },
+    {
+      "id": "check-failed-retry",
+      "name": "Check Failed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2760,
+        2536
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "failed-check",
+              "leftValue": "={{ $json.failed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "retry-limit",
+              "leftValue": "={{ $json.retry_count }}",
+              "rightValue": 3,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "retry-inc-code",
+      "name": "Retry Inc",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2760,
+        2386
+      ],
+      "parameters": {
+        "jsCode": "return $input.all().map((it, i) => ({\n  json: {\n    ...it.json,\n    retry_count: (it.json.retry_count || 0) + 1,\n    taskId: null,\n    done: false,\n    failed: false,\n    poll_count: 0\n  },\n  pairedItem: { item: i }\n}));"
+      }
     }
   ],
   "pinData": {
@@ -5610,7 +5664,7 @@
         ],
         [
           {
-            "node": "Wait_30_poll",
+            "node": "Check Failed",
             "type": "main",
             "index": 0
           }
@@ -5622,6 +5676,35 @@
         [
           {
             "node": "Grok Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Failed": {
+      "main": [
+        [
+          {
+            "node": "Retry Inc",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait_30_poll",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retry Inc": {
+      "main": [
+        [
+          {
+            "node": "Grok",
             "type": "main",
             "index": 0
           }
