@@ -60,7 +60,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://youtube-transcript-690034918341.us-central1.run.app/analyze",
+        "url": "=http://youtube-transcript:8080/analyze",
         "sendBody": true,
         "contentType": "raw",
         "rawContentType": "application/json",
@@ -689,18 +689,30 @@
     },
     {
       "parameters": {
-        "resource": "object",
-        "operation": "create",
-        "bucketName": "n8n_best_automation",
-        "objectName": "={{ String($('Get Data').item.json.ID).trim() }}(Production)/audio",
-        "createBinaryPropertyName": "=audio",
-        "createData": {},
-        "createQuery": {},
-        "encryptionHeaders": {},
-        "requestOptions": {}
+        "method": "POST",
+        "url": "=http://ffmpeg-renderer:8080/save?path={{ encodeURIComponent(String($('Get Data').item.json.ID).trim() + \"(Production)/audio.mp3\") }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "audio/mpeg"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "audio",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
       },
-      "type": "n8n-nodes-base.googleCloudStorage",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
       "position": [
         3696,
         1936
@@ -710,13 +722,7 @@
       "retryOnFail": true,
       "maxTries": 5,
       "waitBetweenTries": 5000,
-      "alwaysOutputData": true,
-      "credentials": {
-        "googleCloudStorageOAuth2Api": {
-          "id": "Iz7RE373dA0iVq4E",
-          "name": "Google Cloud Storage account"
-        }
-      }
+      "alwaysOutputData": true
     },
     {
       "parameters": {
@@ -1103,7 +1109,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ===== FFmpeg Input Builder (UNIFIED: supports video_#.mp4 OR scene_#.mp4) =====\nconst items = $input.all();\n\nconst DEFAULT_BUCKET = \"n8n_best_automation\";\n\nlet folder = \"\";\nlet audioPath = \"\";\nlet videoPaths = [];\n\nfunction getFolderFromName(name) {\n  const parts = String(name || \"\").split(\"/\");\n  return parts[0] || \"\";\n}\n\nfunction getIndexFromVideoName(name) {\n  const s = String(name || \"\");\n  let m = s.match(/(?:^|\\/)video_(\\d+)\\.mp4$/i);\n  if (!m) m = s.match(/(?:^|\\/)scene_(\\d+)\\.mp4$/i);\n  if (!m) return null;\n\n  const n = parseInt(m[1], 10);\n  return Number.isFinite(n) && n > 0 ? n : null;\n}\n\nfunction isAudioName(name) {\n  return /(?:^|\\/)audio(\\.[a-z0-9]+)?$/i.test(String(name || \"\"));\n}\n\nfunction isAudioByContentType(j) {\n  const ct = String(j?.contentType || \"\");\n  return ct.startsWith(\"audio/\");\n}\n\n// 1) 입력 아이템(storage#object)에서 video/audio 분류\nfor (const item of items) {\n  const j = item.json || {};\n  const name = j.name;\n  const bucket = j.bucket || DEFAULT_BUCKET;\n  if (!name) continue;\n\n  if (!folder) folder = getFolderFromName(name);\n\n  const vidIdx = getIndexFromVideoName(name);\n  if (vidIdx) {\n    videoPaths.push({\n      index: vidIdx,\n      path: `gs://${bucket}/${name}`,\n    });\n    continue;\n  }\n\n  if (!audioPath && (isAudioByContentType(j) || isAudioName(name))) {\n    audioPath = `gs://${bucket}/${name}`;\n  }\n}\n\n// 2) 비디오 정렬\nvideoPaths.sort((a, b) => a.index - b.index);\nconst sortedVideos = videoPaths.map(v => v.path);\n\n// 3) durations_sec: Script Code(우선) → 없으면 Image Code fallback\nfunction buildDurationsPairsFromNode(nodeItems) {\n  return (nodeItems || []).map((it, i) => {\n    const j = it.json || {};\n\n    const raw =\n      (j.shot_no ??\n       j.index ??\n       (j.shot_index !== undefined ? (Number(j.shot_index) + 1) : (i + 1)));\n\n    const idx = parseInt(String(raw).trim(), 10);\n\n    return {\n      index: Number.isFinite(idx) && idx > 0 ? idx : (i + 1),\n      duration: Number(j.duration) || 4,\n    };\n  }).sort((a, b) => a.index - b.index);\n}\n\nlet durationsPairs = [];\n\ntry {\n  durationsPairs = buildDurationsPairsFromNode($(\"Script Code\").all());\n} catch (e) {\n  durationsPairs = [];\n}\n\nif (durationsPairs.length === 0) {\n  try {\n    durationsPairs = buildDurationsPairsFromNode($(\"Image Code\").all());\n  } catch (e) {\n    durationsPairs = [];\n  }\n}\n\nconst durations_sec = durationsPairs.map(x => x.duration);\n\n// 4) 검증\nif (!folder) {\n  throw new Error(\"ID(folder)를 찾지 못했습니다. 입력 아이템 json.name이 'ID/...' 형태인지 확인하세요.\");\n}\nif (sortedVideos.length === 0) {\n  throw new Error(\"비디오를 찾지 못했습니다. name이 'ID/video_#.mp4' 또는 'ID/scene_#.mp4' 형태인지 확인하세요.\");\n}\nif (!audioPath) {\n  throw new Error(\"오디오를 찾지 못했습니다. name이 'ID/audio(.확장자)' 형태인지, 또는 contentType이 audio/*인지 확인하세요.\");\n}\n\n// 5) 개수 맞추기\nconst n = Math.min(sortedVideos.length, durations_sec.length);\nconst videosFinal = sortedVideos.slice(0, n);\nconst durationsFinal = durations_sec.slice(0, n);\n\nconst warn = {\n  inputItems: items.length,\n  videosFound: sortedVideos.length,\n  durationsFound: durations_sec.length,\n  used: n,\n};\n\nreturn [{\n  json: {\n    mode: \"grok\",\n    audio: audioPath,\n    videos: videosFinal,\n    durations_sec: durationsFinal,\n    fps: 30,\n    output: `gs://${DEFAULT_BUCKET}/${folder}/shorts_final.mp4`,\n    warn,\n  }\n}];"
+        "jsCode": "// ===== FFmpeg Input Builder (로컬 /media 볼륨, supports video_#.mp4 OR scene_#.mp4) =====\nconst items = $input.all();\n\nconst MEDIA_DIR = \"/media\";\n\nlet folder = \"\";\nlet audioPath = \"\";\nlet videoPaths = [];\n\nfunction getFolderFromName(name) {\n  const parts = String(name || \"\").split(\"/\");\n  return parts[0] || \"\";\n}\n\nfunction getIndexFromVideoName(name) {\n  const s = String(name || \"\");\n  let m = s.match(/(?:^|\\/)video_(\\d+)\\.mp4$/i);\n  if (!m) m = s.match(/(?:^|\\/)scene_(\\d+)\\.mp4$/i);\n  if (!m) return null;\n\n  const n = parseInt(m[1], 10);\n  return Number.isFinite(n) && n > 0 ? n : null;\n}\n\nfunction isAudioName(name) {\n  return /(?:^|\\/)audio(\\.[a-z0-9]+)?$/i.test(String(name || \"\"));\n}\n\nfunction isAudioByContentType(j) {\n  const ct = String(j?.contentType || \"\");\n  return ct.startsWith(\"audio/\");\n}\n\n// 1) 입력 아이템(ffmpeg-renderer /save 응답)에서 video/audio 분류\n// 응답 포맷: { ok, name, contentType, size }\nfor (const item of items) {\n  const j = item.json || {};\n  const name = j.name;  // 예: \"ID(Production)/audio.mp3\" 또는 \"ID(Production)/scene_1.mp4\"\n  if (!name) continue;\n\n  if (!folder) folder = getFolderFromName(name);\n\n  const vidIdx = getIndexFromVideoName(name);\n  if (vidIdx) {\n    videoPaths.push({\n      index: vidIdx,\n      path: `${MEDIA_DIR}/${name}`,\n    });\n    continue;\n  }\n\n  if (!audioPath && (isAudioByContentType(j) || isAudioName(name))) {\n    audioPath = `${MEDIA_DIR}/${name}`;\n  }\n}\n\n// 2) 비디오 정렬\nvideoPaths.sort((a, b) => a.index - b.index);\nconst sortedVideos = videoPaths.map(v => v.path);\n\n// 3) durations_sec: Script Code(우선) → 없으면 Image Code fallback\nfunction buildDurationsPairsFromNode(nodeItems) {\n  return (nodeItems || []).map((it, i) => {\n    const j = it.json || {};\n\n    const raw =\n      (j.shot_no ??\n       j.index ??\n       (j.shot_index !== undefined ? (Number(j.shot_index) + 1) : (i + 1)));\n\n    const idx = parseInt(String(raw).trim(), 10);\n\n    return {\n      index: Number.isFinite(idx) && idx > 0 ? idx : (i + 1),\n      duration: Number(j.duration) || 4,\n    };\n  }).sort((a, b) => a.index - b.index);\n}\n\nlet durationsPairs = [];\n\ntry {\n  durationsPairs = buildDurationsPairsFromNode($(\"Script Code\").all());\n} catch (e) {\n  durationsPairs = [];\n}\n\nif (durationsPairs.length === 0) {\n  try {\n    durationsPairs = buildDurationsPairsFromNode($(\"Image Code\").all());\n  } catch (e) {\n    durationsPairs = [];\n  }\n}\n\nconst durations_sec = durationsPairs.map(x => x.duration);\n\n// 4) 검증\nif (!folder) {\n  throw new Error(\"ID(folder)를 찾지 못했습니다. 입력 아이템 json.name이 'ID/...' 형태인지 확인하세요.\");\n}\nif (sortedVideos.length === 0) {\n  throw new Error(\"비디오를 찾지 못했습니다. name이 'ID/video_#.mp4' 또는 'ID/scene_#.mp4' 형태인지 확인하세요.\");\n}\nif (!audioPath) {\n  throw new Error(\"오디오를 찾지 못했습니다. name이 'ID/audio(.확장자)' 형태인지, 또는 contentType이 audio/*인지 확인하세요.\");\n}\n\n// 5) 개수 맞추기\nconst n = Math.min(sortedVideos.length, durations_sec.length);\nconst videosFinal = sortedVideos.slice(0, n);\nconst durationsFinal = durations_sec.slice(0, n);\n\nconst warn = {\n  inputItems: items.length,\n  videosFound: sortedVideos.length,\n  durationsFound: durations_sec.length,\n  used: n,\n};\n\nreturn [{\n  json: {\n    mode: \"grok\",\n    audio: audioPath,\n    videos: videosFinal,\n    durations_sec: durationsFinal,\n    fps: 30,\n    output: `${MEDIA_DIR}/${folder}/shorts_final.mp4`,\n    warn,\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1120,7 +1126,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=https://ffmpeg-renderer-690034918341.us-central1.run.app/render",
+        "url": "=http://ffmpeg-renderer:8080/render",
         "sendBody": true,
         "bodyParameters": {
           "parameters": [
@@ -1161,10 +1167,14 @@
     },
     {
       "parameters": {
-        "url": "=https://storage.googleapis.com/storage/v1/b/n8n_best_automation/o/{{ encodeURIComponent($json.output.replace(\"gs://n8n_best_automation/\", \"\")) }}?alt=media\n",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "googleCloudStorageOAuth2Api",
-        "options": {}
+        "url": "=http://ffmpeg-renderer:8080/file?path={{ encodeURIComponent($json.output) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
@@ -1175,13 +1185,7 @@
       "id": "6609336f-bdef-402a-8d39-11bbe67ab608",
       "name": "Download Final Video",
       "retryOnFail": true,
-      "waitBetweenTries": 5000,
-      "credentials": {
-        "googleCloudStorageOAuth2Api": {
-          "id": "Iz7RE373dA0iVq4E",
-          "name": "Google Cloud Storage account"
-        }
-      }
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -1438,17 +1442,30 @@
     },
     {
       "parameters": {
-        "resource": "object",
-        "operation": "create",
-        "bucketName": "n8n_best_automation",
-        "objectName": "={{ $json.gcs_object_name }}",
-        "createData": {},
-        "createQuery": {},
-        "encryptionHeaders": {},
-        "requestOptions": {}
+        "method": "POST",
+        "url": "=http://ffmpeg-renderer:8080/save?path={{ encodeURIComponent($json.gcs_object_name) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "video/mp4"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
       },
-      "type": "n8n-nodes-base.googleCloudStorage",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
       "position": [
         3024,
         2400
@@ -1457,13 +1474,7 @@
       "name": "Save Video",
       "retryOnFail": true,
       "maxTries": 5,
-      "waitBetweenTries": 5000,
-      "credentials": {
-        "googleCloudStorageOAuth2Api": {
-          "id": "Iz7RE373dA0iVq4E",
-          "name": "Google Cloud Storage account"
-        }
-      }
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -2664,24 +2675,10 @@
     "Save Audio": [
       {
         "json": {
-          "kind": "storage#object",
-          "id": "n8n_best_automation/202603113(Production)/audio/1773171316233258",
-          "selfLink": "https://www.googleapis.com/storage/v1/b/n8n_best_automation/o/202603113(Production)%2Faudio",
-          "mediaLink": "https://storage.googleapis.com/download/storage/v1/b/n8n_best_automation/o/202603113(Production)%2Faudio?generation=1773171316233258&alt=media",
-          "name": "202603113(Production)/audio",
-          "bucket": "n8n_best_automation",
-          "generation": "1773171316233258",
-          "metageneration": "1",
+          "ok": true,
+          "name": "202603113(Production)/audio.mp3",
           "contentType": "audio/mpeg",
-          "storageClass": "STANDARD",
-          "size": "846829",
-          "md5Hash": "Ix4dEkmgN0fNK9nOLvfj3Q==",
-          "crc32c": "MX+TkA==",
-          "etag": "CKqouPOJlpMDEAE=",
-          "timeCreated": "2026-03-10T19:35:16.275Z",
-          "updated": "2026-03-10T19:35:16.275Z",
-          "timeStorageClassUpdated": "2026-03-10T19:35:16.275Z",
-          "timeFinalized": "2026-03-10T19:35:16.275Z"
+          "size": 846829
         },
         "pairedItem": {
           "item": 0
