@@ -733,7 +733,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\n\nreturn items.map((it, i) => {\n  const d = it.json?.body?.data || it.json?.data || {};\n\n  let url = null;\n  try {\n    const rj = d?.resultJson;\n    const obj = (typeof rj === 'string') ? JSON.parse(rj) : rj;\n    url = obj?.resultUrls?.[0] || null;\n  } catch (e) {}\n\n  url = String(url || '').split('\\n')[0].split('\\r')[0].trim();\n\n  const state = String(d?.state || '').toLowerCase();\n  const failed = state === 'failed' || state === 'fail' || !!d?.failCode;\n  const done = state === 'success' && /^https?:\\/\\//i.test(url);\n  const poll_count = (it.json?.poll_count || 0) + 1;\n  const retry_count = it.json?.retry_count || 0;\n\n  return {\n    json: {\n      ...it.json,\n      taskId: d?.taskId ?? it.json?.taskId ?? null,\n      state: d?.state ?? null,\n      done,\n      failed,\n      poll_count,\n      retry_count,\n      video_url: url\n    },\n    pairedItem: { item: i }\n  };\n});"
+        "jsCode": "const items = $input.all();\n\nreturn items.map((it, i) => {\n  const d = it.json?.body?.data || it.json?.data || {};\n\n  let url = null;\n  try {\n    const rj = d?.resultJson;\n    const obj = (typeof rj === 'string') ? JSON.parse(rj) : rj;\n    url = obj?.resultUrls?.[0] || null;\n  } catch (e) {}\n\n  url = String(url || '').split('\\n')[0].split('\\r')[0].trim();\n\n  const state = String(d?.state || '').toLowerCase();\n  // Treat HTTP 5xx responses from Grok Check as failed (triggers retry path)\n  const httpStatus = it.json?.statusCode || it.json?.status || 200;\n  const serverError = httpStatus >= 500;\n\n  const failed = state === 'failed' || state === 'fail' || !!d?.failCode || serverError;\n  const done = state === 'success' && /^https?:\\/\\//i.test(url);\n  const poll_count = (it.json?.poll_count || 0) + 1;\n  const retry_count = it.json?.retry_count || 0;\n\n  return {\n    json: {\n      ...it.json,\n      taskId: d?.taskId ?? it.json?.taskId ?? null,\n      state: d?.state ?? null,\n      done,\n      failed,\n      poll_count,\n      retry_count,\n      video_url: url\n    },\n    pairedItem: { item: i }\n  };\n});"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -900,7 +900,7 @@
     },
     {
       "parameters": {
-        "batchSize": 4,
+        "batchSize": 1,
         "options": {}
       },
       "type": "n8n-nodes-base.splitInBatches",
@@ -1664,7 +1664,7 @@
       "id": "merge1-restored",
       "name": "Merge1",
       "type": "n8n-nodes-base.merge",
-      "typeVersion": 3,
+      "typeVersion": 3.2,
       "position": [
         2400,
         300
@@ -5422,6 +5422,11 @@
             "node": "Grok",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -5640,11 +5645,6 @@
         [
           {
             "node": "Grok URL",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Merge1",
             "type": "main",
             "index": 0
           }
