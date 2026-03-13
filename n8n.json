@@ -900,7 +900,7 @@
     },
     {
       "parameters": {
-        "batchSize": 1,
+        "batchSize": 3,
         "options": {}
       },
       "type": "n8n-nodes-base.splitInBatches",
@@ -1681,6 +1681,19 @@
           ]
         },
         "options": {}
+      }
+    },
+    {
+      "id": "restore-meta-node-001",
+      "name": "Restore Meta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2848,
+        2416
+      ],
+      "parameters": {
+        "jsCode": "// GrokURL (HTTP Request with fullResponse:true) replaces json entirely with HTTP\n// response metadata (statusCode, headers, body), losing shot_index, gcs_object_name, etc.\n// Restore those fields from Video Code which is directly upstream in this execution chain.\n\nconst items = $input.all();\n\nreturn items.map((it, i) => {\n  const meta = $('Video Code').item.json;\n\n  return {\n    json: {\n      shot_index:      meta.shot_index,\n      scene_number:    meta.scene_number,\n      gcs_object_name: meta.gcs_object_name,\n      duration:        meta.duration,\n      start_sec:       meta.start_sec,\n      aspect_ratio:    meta.aspect_ratio,\n      video_url:       meta.video_url,\n    },\n    binary: it.binary,\n    pairedItem: { item: i }\n  };\n});"
       }
     }
   ],
@@ -5401,9 +5414,9 @@
       "main": [
         [
           {
-            "node": "Merge1",
+            "node": "Restore Meta",
             "type": "main",
-            "index": 1
+            "index": 0
           }
         ]
       ]
@@ -5420,11 +5433,6 @@
         [
           {
             "node": "Grok",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Merge1",
             "type": "main",
             "index": 0
           }
@@ -5698,7 +5706,7 @@
         ]
       ]
     },
-    "Merge1": {
+    "Restore Meta": {
       "main": [
         [
           {
